@@ -450,6 +450,14 @@ impl XtSmGraphics {
     }
 }
 
+/// OS dark/light color scheme preference, reported via
+/// CSI ? 997 ; 1 n (dark) or CSI ? 997 ; 2 n (light).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSchemePreference {
+    Dark = 1,
+    Light = 2,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Device {
     DeviceAttributes(DeviceAttributes),
@@ -464,6 +472,14 @@ pub enum Device {
     RequestTerminalNameAndVersion,
     RequestTerminalParameters(i64),
     XtSmGraphics(XtSmGraphics),
+    /// CSI ? 996 n: application asks for the current OS dark/light
+    /// color scheme preference.
+    /// <https://github.com/contour-terminal/contour/blob/f3c3334aa5c861348c5bbe8ffe572c872eef2e08/docs/vt-extensions/color-palette-update-notifications.md>
+    RequestColorSchemePreference,
+    /// CSI ? 997 ; 1 n (dark) or CSI ? 997 ; 2 n (light):
+    /// terminal answers (or proactively notifies, when DEC 2031 is set)
+    /// the OS dark/light color scheme preference.
+    ReportColorSchemePreference(ColorSchemePreference),
 }
 
 impl Display for Device {
@@ -484,6 +500,8 @@ impl Display for Device {
             Device::RequestTerminalNameAndVersion => write!(f, ">q")?,
             Device::RequestTerminalParameters(n) => write!(f, "{};1;1;128;128;1;0x", n + 2)?,
             Device::StatusReport => write!(f, "5n")?,
+            Device::RequestColorSchemePreference => write!(f, "?996n")?,
+            Device::ReportColorSchemePreference(pref) => write!(f, "?997;{}n", *pref as u8)?,
             Device::XtSmGraphics(g) => {
                 write!(f, "?{};{}", g.item, g.action_or_status)?;
                 for v in &g.value {
@@ -964,6 +982,14 @@ pub enum DecPrivateModeCode {
     /// Windows Terminal: win32-input-mode
     /// <https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md>
     Win32InputMode = 9001,
+
+    /// Request unsolicited dark/light color scheme change notifications.
+    /// When set (CSI ? 2031 h), the terminal emits CSI ? 997 ; 1 n (dark)
+    /// or CSI ? 997 ; 2 n (light) whenever the OS color scheme preference
+    /// changes; reset with CSI ? 2031 l.
+    /// <https://github.com/contour-terminal/contour/blob/f3c3334aa5c861348c5bbe8ffe572c872eef2e08/docs/vt-extensions/color-palette-update-notifications.md>
+    /// <https://github.com/wezterm/wezterm/issues/6454>
+    ColorPaletteUpdateNotifications = 2031,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2093,6 +2119,12 @@ impl<'a> CSIParser<'a> {
             [CsiParam::Integer(6)] => {
                 Ok(self.advance_by(1, params, CSI::Cursor(Cursor::RequestActivePositionReport)))
             }
+
+            [CsiParam::P(b'?'), CsiParam::Integer(996)] => Ok(self.advance_by(
+                2,
+                params,
+                CSI::Device(Box::new(Device::RequestColorSchemePreference)),
+            )),
             _ => Err(()),
         }
     }
@@ -3393,5 +3425,54 @@ mod test {
             )))]
         );
         assert_eq!(encode(&res), "\x1b[?63;1;2;4;6;9;15;22c");
+    }
+
+    #[test]
+    fn dec_2031_color_palette_update_notifications() {
+        // CSI ? 2031 h : enable unsolicited color scheme preference reports
+        let res: Vec<CSI> =
+            CSI::parse(&[CsiParam::P(b'?'), CsiParam::Integer(2031)], false, 'h').collect();
+        assert_eq!(
+            res,
+            vec![CSI::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
+                DecPrivateModeCode::ColorPaletteUpdateNotifications
+            )))]
+        );
+        assert_eq!(encode(&res), "\x1b[?2031h");
+
+        // CSI ? 2031 l : disable them again
+        let res: Vec<CSI> =
+            CSI::parse(&[CsiParam::P(b'?'), CsiParam::Integer(2031)], false, 'l').collect();
+        assert_eq!(
+            res,
+            vec![CSI::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(
+                DecPrivateModeCode::ColorPaletteUpdateNotifications
+            )))]
+        );
+        assert_eq!(encode(&res), "\x1b[?2031l");
+
+        // CSI ? 996 n : query the OS dark/light color scheme preference
+        let res: Vec<CSI> =
+            CSI::parse(&[CsiParam::P(b'?'), CsiParam::Integer(996)], false, 'n').collect();
+        assert_eq!(
+            res,
+            vec![CSI::Device(Box::new(Device::RequestColorSchemePreference))]
+        );
+        assert_eq!(encode(&res), "\x1b[?996n");
+
+        // The terminal's answers serialize as CSI ? 997 ; 1 n (dark) and
+        // CSI ? 997 ; 2 n (light)
+        assert_eq!(
+            encode(&vec![CSI::Device(Box::new(
+                Device::ReportColorSchemePreference(ColorSchemePreference::Dark)
+            ))]),
+            "\x1b[?997;1n"
+        );
+        assert_eq!(
+            encode(&vec![CSI::Device(Box::new(
+                Device::ReportColorSchemePreference(ColorSchemePreference::Light)
+            ))]),
+            "\x1b[?997;2n"
+        );
     }
 }
