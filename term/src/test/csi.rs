@@ -401,3 +401,24 @@ fn test_ed_erase_scrollback() {
     term.print("b");
     assert_all_contents(&term, file!(), line!(), &["111", "222", "ab"]);
 }
+
+/// DEC private mode 2031 (color palette update notifications) and the
+/// `CSI ? 996 n` color scheme preference query are accepted without
+/// disturbing the screen. The `CSI ? 997 ; 1|2 n` reports they trigger go
+/// to the pty writer, which the test harness cannot observe; the parser
+/// tests pin the exact bytes emitted.
+/// <https://github.com/wezterm/wezterm/issues/6454>
+#[test]
+fn test_2031_color_palette_update_notifications() {
+    let mut term = TestTerm::new(3, 8, 0);
+    term.print("hello");
+
+    // Enable unsolicited reports, query the preference, ask for the mode
+    // state, then disable again: none of this touches the grid or cursor.
+    term.print("\x1b[?2031h\x1b[?996n\x1b[?2031$p\x1b[?2031l");
+    assert_visible_contents(&term, file!(), line!(), &["hello", "", ""]);
+
+    // Normal text still lands where the cursor is.
+    term.print("!");
+    assert_visible_contents(&term, file!(), line!(), &["hello!", "", ""]);
+}

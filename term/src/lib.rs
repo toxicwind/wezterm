@@ -41,6 +41,16 @@ pub use crate::terminal::*;
 pub mod terminalstate;
 pub use crate::terminalstate::*;
 
+/// The desktop environment's dark/light color scheme preference,
+/// as last reported by the windowing system.
+/// Used for DEC private mode 2031 color palette update notifications
+/// (CSI ? 2031 h / CSI ? 996 n / CSI ? 997 ; 1|2 n).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalAppearance {
+    Dark,
+    Light,
+}
+
 /// Represents the index into screen.lines.  Index 0 is the top of
 /// the scrollback (if any).  The index of the top of the visible screen
 /// depends on the terminal dimensions and the scrollback size.

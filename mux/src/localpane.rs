@@ -241,6 +241,10 @@ impl Pane for LocalPane {
         }
     }
 
+    fn appearance_changed(&self, appearance: wezterm_term::TerminalAppearance) {
+        self.terminal.lock().set_appearance(appearance);
+    }
+
     fn kill(&self) {
         let mut proc = self.process.lock();
         log::debug!(

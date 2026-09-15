@@ -1,4 +1,5 @@
 use crate::terminal::{Alert, Progress};
+use crate::terminalstate::kitty_unicode::UNICODE_PLACEHOLDER;
 use crate::terminalstate::{
     default_color_map, CharSet, MouseEncoding, TabStop, UnicodeVersionStackEntry,
 };
@@ -131,6 +132,11 @@ impl<'a> Performer<'a> {
             p.as_str()
         };
 
+        // Cells holding kitty Unicode placeholders (U+10EEEE) are resolved
+        // against virtual (U=1) image placements after the loop, once the
+        // placeholder text is in the grid.
+        let mut unicode_placeholders: Vec<(usize, VisibleRowIndex)> = Vec::new();
+
         for g in Graphemes::new(text) {
             let g = self.remap_grapheme(g);
 
@@ -223,12 +229,22 @@ impl<'a> Performer<'a> {
             self.screen_mut()
                 .set_cell_grapheme(x, y, g, print_width, pen, seqno);
 
+            if g.starts_with(UNICODE_PLACEHOLDER) {
+                unicode_placeholders.push((x, y));
+            }
+
             if !wrappable {
                 self.cursor.x += print_width;
                 self.wrap_next = false;
             } else {
                 self.wrap_next = self.dec_auto_wrap;
             }
+        }
+
+        // Attach image fragments to kitty Unicode placeholder cells now
+        // that their text (and colors) is in the grid.
+        for (x, y) in unicode_placeholders {
+            self.resolve_unicode_placeholder(x, y);
         }
 
         std::mem::swap(&mut self.print, &mut p);

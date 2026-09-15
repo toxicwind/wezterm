@@ -67,7 +67,9 @@ use wezterm_dynamic::Value;
 use wezterm_font::FontConfiguration;
 use wezterm_term::color::ColorPalette;
 use wezterm_term::input::LastMouseClick;
-use wezterm_term::{Alert, Progress, StableRowIndex, TerminalConfiguration, TerminalSize};
+use wezterm_term::{
+    Alert, Progress, StableRowIndex, TerminalAppearance, TerminalConfiguration, TerminalSize,
+};
 
 pub mod background;
 pub mod box_model;
@@ -639,6 +641,13 @@ impl TermWindow {
             };
         }
 
+        // Record the current OS appearance in the new window's panes so
+        // that explicit CSI ? 996 n queries report the truth even before
+        // the first AppearanceChanged event arrives.
+        if let Some(connection) = Connection::get() {
+            Self::push_appearance_to_panes(mux_window_id, connection.get_appearance());
+        }
+
         let h_context = DimensionContext {
             dpi: dpi as f32,
             pixel_max: terminal_size.pixel_width as f32,
@@ -900,6 +909,33 @@ impl TermWindow {
         Ok(())
     }
 
+    /// Push the current OS dark/light color scheme preference to
+    /// every pane in the given mux window. Panes backed by a local
+    /// terminal record it and, when the application enabled DEC private
+    /// mode 2031 (CSI ? 2031 h), emit an unsolicited CSI ? 997 ; 1|2 n
+    /// report to the pty owner.
+    fn push_appearance_to_panes(mux_window_id: MuxWindowId, appearance: Appearance) {
+        let appearance = match appearance {
+            Appearance::Dark | Appearance::DarkHighContrast => TerminalAppearance::Dark,
+            Appearance::Light | Appearance::LightHighContrast => TerminalAppearance::Light,
+        };
+        // Snapshot the panes first so that the mux window lock is released
+        // before we lock each pane's terminal below.
+        let mux = Mux::get();
+        let panes: Vec<Arc<dyn Pane>> = match mux.get_window(mux_window_id) {
+            Some(window) => window
+                .iter_tabs()
+                .flat_map(|tab| tab.iter_panes())
+                .map(|positioned| Arc::clone(&positioned.pane))
+                .collect(),
+            None => Vec::new(),
+        };
+        drop(mux);
+        for pane in panes {
+            pane.appearance_changed(appearance);
+        }
+    }
+
     fn dispatch_window_event(
         &mut self,
         event: WindowEvent,
@@ -934,6 +970,11 @@ impl TermWindow {
                 // <https://github.com/wezterm/wezterm/issues/2295>
                 config::reload();
                 self.config_was_reloaded();
+                // Forward the appearance change to every pane in this
+                // window so that applications which enabled DEC private
+                // mode 2031 (CSI ? 2031 h) receive an unsolicited
+                // CSI ? 997 ; 1|2 n color scheme preference report.
+                Self::push_appearance_to_panes(self.mux_window_id, appearance);
                 Ok(true)
             }
             WindowEvent::PerformKeyAssignment(action) => {

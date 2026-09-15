@@ -19,9 +19,10 @@ use wezterm_bidi::ParagraphDirectionHint;
 use wezterm_cell::image::ImageData;
 use wezterm_cell::UnicodeVersion;
 use wezterm_escape_parser::csi::{
-    Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Device, Edit, EraseInDisplay,
-    EraseInLine, Mode, Sgr, TabulationClear, TerminalMode, TerminalModeCode, Window, XtSmGraphics,
-    XtSmGraphicsAction, XtSmGraphicsItem, XtSmGraphicsStatus, XtermKeyModifierResource,
+    ColorSchemePreference, Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Device, Edit,
+    EraseInDisplay, EraseInLine, Mode, Sgr, TabulationClear, TerminalMode, TerminalModeCode,
+    Window, XtSmGraphics, XtSmGraphicsAction, XtSmGraphicsItem, XtSmGraphicsStatus,
+    XtermKeyModifierResource,
 };
 use wezterm_escape_parser::{OneBased, OperatingSystemCommand, CSI};
 use wezterm_surface::{CursorShape, CursorVisibility, SequenceNo};
@@ -30,6 +31,7 @@ mod image;
 mod iterm;
 mod keyboard;
 mod kitty;
+mod kitty_unicode;
 mod mouse;
 pub(crate) mod performer;
 mod sixel;
@@ -322,6 +324,13 @@ pub struct TerminalState {
     /// designated marker characters.
     bracketed_paste: bool,
 
+    /// When set (CSI ? 2031 h), report OS dark/light color scheme
+    /// preference changes unsolicited via CSI ? 997 ; 1|2 n.
+    /// <https://github.com/contour-terminal/contour/blob/f3c3334aa5c861348c5bbe8ffe572c872eef2e08/docs/vt-extensions/color-palette-update-notifications.md>
+    color_palette_update_notifications: bool,
+    /// Last known OS dark/light color scheme preference.
+    appearance: TerminalAppearance,
+
     /// Movement events enabled
     any_event_mouse: bool,
     focus_tracking: bool,
@@ -551,6 +560,8 @@ impl TerminalState {
             color_map,
             application_keypad: false,
             bracketed_paste: false,
+            color_palette_update_notifications: false,
+            appearance: TerminalAppearance::Dark,
             focus_tracking: false,
             mouse_encoding: MouseEncoding::X10,
             keyboard_encoding: KeyboardEncoding::Xterm,
@@ -1456,6 +1467,13 @@ impl TerminalState {
                 self.writer.write(b"\x1b[0n").ok();
                 self.writer.flush().ok();
             }
+            Device::RequestColorSchemePreference => {
+                self.report_color_scheme_preference();
+            }
+            Device::ReportColorSchemePreference(_) => {
+                // The terminal emits these reports; a program echoing one
+                // back is ignored.
+            }
             Device::XtSmGraphics(g) => {
                 let response = if matches!(g.item, XtSmGraphicsItem::Unspecified(_)) {
                     XtSmGraphics {
@@ -1515,6 +1533,32 @@ impl TerminalState {
 
         write!(self.writer, "\x1b[{prefix}{number};3$y").ok();
         self.writer.flush().ok();
+    }
+
+    /// Report the current OS dark/light color scheme preference as
+    /// CSI ? 997 ; 1 n (dark) or CSI ? 997 ; 2 n (light).
+    fn report_color_scheme_preference(&mut self) {
+        let pref = match self.appearance {
+            TerminalAppearance::Dark => ColorSchemePreference::Dark,
+            TerminalAppearance::Light => ColorSchemePreference::Light,
+        };
+        let dev = Device::ReportColorSchemePreference(pref);
+
+        write!(self.writer, "\x1b[{dev}").ok();
+        self.writer.flush().ok();
+    }
+
+    /// Update the known OS dark/light color scheme preference.
+    /// When DEC private mode 2031 is set, an unsolicited
+    /// CSI ? 997 ; 1|2 n report is emitted to the pty owner.
+    pub fn set_appearance(&mut self, appearance: TerminalAppearance) {
+        if self.appearance == appearance {
+            return;
+        }
+        self.appearance = appearance;
+        if self.color_palette_update_notifications {
+            self.report_color_scheme_preference();
+        }
     }
 
     fn decqrm_response(&mut self, mode: Mode, mut recognized: bool, enabled: bool) {
@@ -1788,6 +1832,21 @@ impl TerminalState {
             }
             Mode::QueryDecPrivateMode(DecPrivateMode::Code(DecPrivateModeCode::BracketedPaste)) => {
                 self.decqrm_response(mode, true, self.bracketed_paste);
+            }
+            Mode::SetDecPrivateMode(DecPrivateMode::Code(
+                DecPrivateModeCode::ColorPaletteUpdateNotifications,
+            )) => {
+                self.color_palette_update_notifications = true;
+            }
+            Mode::ResetDecPrivateMode(DecPrivateMode::Code(
+                DecPrivateModeCode::ColorPaletteUpdateNotifications,
+            )) => {
+                self.color_palette_update_notifications = false;
+            }
+            Mode::QueryDecPrivateMode(DecPrivateMode::Code(
+                DecPrivateModeCode::ColorPaletteUpdateNotifications,
+            )) => {
+                self.decqrm_response(mode, true, self.color_palette_update_notifications);
             }
 
             Mode::SetDecPrivateMode(DecPrivateMode::Code(

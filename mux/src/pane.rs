@@ -18,7 +18,7 @@ use wezterm_dynamic::Value;
 use wezterm_term::color::ColorPalette;
 use wezterm_term::{
     Clipboard, DownloadHandler, KeyCode, KeyModifiers, MouseEvent, Progress, SemanticZone,
-    StableRowIndex, TerminalConfiguration, TerminalSize,
+    StableRowIndex, TerminalAppearance, TerminalConfiguration, TerminalSize,
 };
 
 static PANE_ID: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
@@ -260,6 +260,11 @@ pub trait Pane: Downcast + Send + Sync {
     fn perform_actions(&self, _actions: Vec<termwiz::escape::Action>) {}
     fn is_dead(&self) -> bool;
     fn kill(&self) {}
+    /// Notify the pane that the OS dark/light color scheme preference
+    /// changed. Panes backed by a local terminal forward this so that
+    /// applications that enabled DEC private mode 2031 (CSI ? 2031 h)
+    /// receive an unsolicited CSI ? 997 ; 1|2 n report.
+    fn appearance_changed(&self, _appearance: TerminalAppearance) {}
     fn palette(&self) -> ColorPalette;
     fn domain_id(&self) -> DomainId;
 
