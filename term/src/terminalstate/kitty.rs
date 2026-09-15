@@ -1,4 +1,5 @@
 use crate::terminalstate::image::*;
+use crate::terminalstate::kitty_unicode::VirtualPlacement;
 use crate::terminalstate::{ImageAttachParams, PlacementInfo};
 use crate::{StableRowIndex, TerminalState};
 use ::image::{
@@ -24,6 +25,8 @@ pub struct KittyImageState {
     number_to_id: HashMap<u32, u32>,
     id_to_data: HashMap<u32, Arc<ImageData>>,
     placements: HashMap<(u32, Option<u32>), PlacementInfo>,
+    /// Virtual (U=1) placements, resolved by Unicode placeholder cells.
+    pub(crate) virtual_placements: HashMap<(u32, Option<u32>), VirtualPlacement>,
     used_memory: usize,
 }
 
@@ -46,7 +49,12 @@ impl KittyImageState {
     fn prune_unreferenced(&mut self) {
         let budget = 320 * 1024 * 1024; // FIXME: make this configurable
         if self.used_memory > budget {
-            let referenced: HashSet<u32> = self.placements.keys().map(|(k, _)| *k).collect();
+            let referenced: HashSet<u32> = self
+                .placements
+                .keys()
+                .map(|(k, _)| *k)
+                .chain(self.virtual_placements.keys().map(|(k, _)| *k))
+                .collect();
             let target = self.used_memory - budget;
             let mut freed = 0;
             self.id_to_data.retain(|id, data| {
@@ -110,6 +118,12 @@ impl TerminalState {
                 image_number
             )
         })?);
+
+        if placement.unicode_placeholders {
+            // Virtual placement: register it for Unicode placeholder
+            // resolution. No cells are touched and the cursor does not move.
+            return self.kitty_register_virtual_placement(image_id, &placement, img);
+        }
 
         let (image_width, image_height) = img.data().dimensions()?;
 
@@ -256,6 +270,7 @@ impl TerminalState {
                 );
 
                 self.kitty_remove_placement(image_id, placement_id);
+                self.kitty_remove_virtual_placements(image_id, placement_id);
 
                 if delete {
                     self.kitty_img.remove_data_for_id(image_id);
@@ -266,6 +281,33 @@ impl TerminalState {
                 verbosity: _,
             } => {
                 self.kitty_remove_all_placements(delete);
+            }
+            KittyImage::Delete {
+                what:
+                    KittyImageDelete::ByImageNumber {
+                        image_number,
+                        placement_id,
+                        delete,
+                    },
+                verbosity: _,
+            } => {
+                // Deletion by image number is implemented for virtual (U=1)
+                // placements: the spec deletes virtual placements for
+                // d=i,I,r,R,n,N.
+                match self.kitty_img.number_to_id.get(&image_number).copied() {
+                    Some(image_id) => {
+                        self.kitty_remove_virtual_placements(image_id, placement_id);
+                        if delete {
+                            self.kitty_img.remove_data_for_id(image_id);
+                        }
+                    }
+                    None => {
+                        log::warn!(
+                            "delete by image number: no image id for number {}",
+                            image_number
+                        );
+                    }
+                }
             }
             KittyImage::Delete { what, verbosity } => {
                 log::warn!("unhandled KittyImage::Delete {:?} {:?}", what, verbosity);
@@ -338,6 +380,8 @@ impl TerminalState {
     }
 
     pub(crate) fn kitty_remove_all_placements(&mut self, delete: bool) {
+        // Virtual (U=1) placements are deleted along with drawn ones.
+        self.kitty_img.virtual_placements.clear();
         for ((image_id, p), info) in std::mem::take(&mut self.kitty_img.placements).into_iter() {
             self.kitty_remove_placement_from_model(image_id, p, info);
         }

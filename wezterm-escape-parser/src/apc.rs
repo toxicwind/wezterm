@@ -620,6 +620,14 @@ pub struct KittyImagePlacement {
     pub placement_id: Option<u32>,
     /// z=...
     pub z_index: Option<i32>,
+    /// When true (U=1), create a virtual placement instead of drawing:
+    /// the placement is registered under (image id, placement id) but no
+    /// cells are touched and the cursor does not move. Cells containing
+    /// the U+10EEEE placeholder character (with the image id encoded in
+    /// the foreground color and row/column/msb in diacritics) then render
+    /// fragments of this image.
+    /// <https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders>
+    pub unicode_placeholders: bool,
 }
 
 impl KittyImagePlacement {
@@ -640,6 +648,11 @@ impl KittyImagePlacement {
                 _ => return None,
             },
             z_index: geti(keys, "z"),
+            unicode_placeholders: match get(keys, "U") {
+                None | Some("0") => false,
+                Some("1") => true,
+                _ => return None,
+            },
         })
     }
 
@@ -656,6 +669,9 @@ impl KittyImagePlacement {
 
         if self.do_not_move_cursor {
             keys.insert("C", "1".to_string());
+        }
+        if self.unicode_placeholders {
+            keys.insert("U", "1".to_string());
         }
 
         set(keys, "z", &self.z_index);
@@ -1276,5 +1292,39 @@ mod test {
                 },
             }
         );
+    }
+
+    #[test]
+    fn kitty_unicode_placeholders_flag() {
+        // U=1 requests a virtual placement resolved by Unicode placeholders
+        let parsed = KittyImage::parse_apc("Ga=p,U=1,i=42,p=7,c=4,r=2".as_bytes()).unwrap();
+        match &parsed {
+            KittyImage::Display {
+                image_id,
+                placement,
+                ..
+            } => {
+                assert_eq!(*image_id, Some(42));
+                assert_eq!(placement.unicode_placeholders, true);
+                assert_eq!(placement.placement_id, Some(7));
+                assert_eq!(placement.columns, Some(4));
+                assert_eq!(placement.rows, Some(2));
+            }
+            other => panic!("expected Display, got {:?}", other),
+        }
+
+        // U=0 and an absent U leave the flag off
+        for payload in ["Ga=p,U=0,i=42", "Ga=p,i=42"] {
+            let parsed = KittyImage::parse_apc(payload.as_bytes()).unwrap();
+            match &parsed {
+                KittyImage::Display { placement, .. } => {
+                    assert_eq!(placement.unicode_placeholders, false);
+                }
+                other => panic!("expected Display, got {:?}", other),
+            }
+        }
+
+        // Any other U value is rejected
+        assert_eq!(KittyImage::parse_apc("Ga=p,U=2,i=42".as_bytes()), None);
     }
 }
