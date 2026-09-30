@@ -1,3 +1,19 @@
+> **🍴 toxicwind fork** of [wezterm/wezterm](https://github.com/wezterm/wezterm) —
+> Wez's GPU-accelerated terminal emulator and multiplexer. Everything below is
+> upstream's README, kept verbatim; this fork tracks upstream `main` (last merge
+> `4ad65b0`, 2026-09-18) and carries Chris's own patches on top:
+>
+> - **DEC 2031 appearance-change notifications** — parser, term, mux and gui
+>   support for live color-palette update notifications (`dcbc1b4`, `e44c2ec`).
+> - **OSC 777 toast notifications** — regression tests (`f23ae77`).
+> - **Kitty graphics** — `U=1` unicode placeholders for image placements
+>   (`221a935`).
+> - **Secret hygiene** — gitignore block so credentials are never committed
+>   (`869faf8`).
+>
+> License: MIT (Wez Furlong) — see [LICENSE.md](./LICENSE.md).
+>
+> ---
 # Wez's Terminal
 
 <img height="128" alt="WezTerm Icon" src="https://raw.githubusercontent.com/wezterm/wezterm/main/assets/icon/wezterm-icon.svg" align="left"> *A GPU-accelerated cross-platform terminal emulator and multiplexer written by <a href="https://github.com/wez">@wez</a> and implemented in <a href="https://www.rust-lang.org/">Rust</a>*
