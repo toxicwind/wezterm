@@ -1,4 +1,4 @@
-> **🍴 toxicwind fork** of [wezterm/wezterm](https://github.com/wezterm/wezterm) —
+> **🍴 estate fork** of [wezterm/wezterm](https://github.com/wezterm/wezterm) —
 > Wez's GPU-accelerated terminal emulator and multiplexer. Everything below is
 > upstream's README, kept verbatim; this fork tracks upstream `main` (last merge
 > `4ad65b0`, 2026-09-18) and carries Chris's own patches on top:
