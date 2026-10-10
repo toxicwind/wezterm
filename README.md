@@ -1,19 +1,34 @@
-> **🍴 estate fork** of [wezterm/wezterm](https://github.com/wezterm/wezterm) —
-> Wez's GPU-accelerated terminal emulator and multiplexer. Everything below is
-> upstream's README, kept verbatim; this fork tracks upstream `main` (last merge
-> `4ad65b0`, 2026-09-18) and carries Chris's own patches on top:
->
-> - **DEC 2031 appearance-change notifications** — parser, term, mux and gui
->   support for live color-palette update notifications (`dcbc1b4`, `e44c2ec`).
-> - **OSC 777 toast notifications** — regression tests (`f23ae77`).
-> - **Kitty graphics** — `U=1` unicode placeholders for image placements
->   (`221a935`).
-> - **Secret hygiene** — gitignore block so credentials are never committed
->   (`869faf8`).
->
-> License: MIT (Wez Furlong) — see [LICENSE.md](./LICENSE.md).
->
-> ---
+<p align="center">
+  <img src="https://raw.githubusercontent.com/wezterm/wezterm/main/assets/icon/wezterm-icon.svg" height="96" alt="wezterm" />
+</p>
+
+<h1 align="center">estate / wezterm</h1>
+
+<p align="center">
+  <a href="https://github.com/wezterm/wezterm"><img src="https://img.shields.io/badge/upstream-wezterm%2Fwezterm-blue?style=flat-square" alt="upstream" /></a>
+  <a href="https://github.com/estate/wezterm/actions"><img src="https://img.shields.io/github/actions/workflow/status/estate/wezterm/ci.yml?style=flat-square" alt="ci" /></a>
+  <a href="./LICENSE.md"><img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="license" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.7+-orange?style=flat-square&logo=rust" alt="rust" /></a>
+</p>
+
+<p align="center">
+  <strong>estate fork</strong> of <a href="https://github.com/wezterm/wezterm">wezterm/wezterm</a> — GPU-accelerated terminal emulator.<br/>
+  Tracks upstream <code>main</code> (last merge <code>372548295</code>) with local protocol extensions.
+</p>
+
+## Fork extensions
+
+| Feature | Commits |
+|---------|---------|
+| DEC 2031 appearance-change notifications | <code>dcbc1b4</code>, <code>e44c2ec</code> |
+| OSC 777 toast notification tests | <code>f23ae77</code> |
+| Kitty U=1 unicode placeholders | <code>221a935</code> |
+| Weave entity-level merge driver | <code>b8cf8c6</code> |
+
+Diff vs upstream: 19 files, +1182/−9. See <code>MERGE-DECISIONS.md</code>.
+
+---
+
 # Wez's Terminal
 
 <img height="128" alt="WezTerm Icon" src="https://raw.githubusercontent.com/wezterm/wezterm/main/assets/icon/wezterm-icon.svg" align="left"> *A GPU-accelerated cross-platform terminal emulator and multiplexer written by <a href="https://github.com/wez">@wez</a> and implemented in <a href="https://www.rust-lang.org/">Rust</a>*
